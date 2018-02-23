@@ -19,6 +19,9 @@
 
 #include <afina/Storage.h>
 
+#include <protocol/Parser.h>
+#include <afina/execute/Command.h>
+
 namespace Afina {
 namespace Network {
 namespace Blocking {
@@ -30,6 +33,19 @@ void *ServerImpl::RunAcceptorProxy(void *p) {
     } catch (std::runtime_error &ex) {
         std::cerr << "Server fails: " << ex.what() << std::endl;
     }
+    return 0;
+}
+
+void *ServerImpl::RunConnectionProxy(void *p) {
+    auto server_client_pair = reinterpret_cast<std::pair<ServerImpl*, int>*>(p);
+    auto srv = server_client_pair->first;
+    auto client_socket = server_client_pair->second;
+    try {
+        srv->RunConnection(client_socket);
+    } catch (std::runtime_error &ex) {
+        std::cerr << "Server fails: " << ex.what() << std::endl;
+    }
+    delete server_client_pair;
     return 0;
 }
 
@@ -91,6 +107,8 @@ void ServerImpl::Start(uint32_t port, uint16_t n_workers) {
 void ServerImpl::Stop() {
     std::cout << "network debug: " << __PRETTY_FUNCTION__ << std::endl;
     running.store(false);
+
+
 }
 
 // See Server.h
@@ -170,15 +188,14 @@ void ServerImpl::RunAcceptor() {
             throw std::runtime_error("Socket accept() failed");
         }
 
-        // TODO: Start new thread and process data from/to connection
-        {
-            std::string msg = "TODO: start new thread and process memcached protocol instead";
-            if (send(client_socket, msg.data(), msg.size(), 0) <= 0) {
-                close(client_socket);
-                close(server_socket);
-                throw std::runtime_error("Socket send() failed");
-            }
-            close(client_socket);
+        if (connections.size() < max_workers) { // TODO: lock
+            pthread_t client_thread;
+            pthread_create(&client_thread, NULL, RunConnectionProxy, new std::pair<ServerImpl*, int>(this, client_socket));
+            pthread_detach(client_thread);
+            connections.insert(client_thread);
+        } else {
+            std::cout << "NOT ENOUGH WORKERS: " << connections.size() << std::endl;
+            // TODO
         }
     }
 
@@ -187,9 +204,71 @@ void ServerImpl::RunAcceptor() {
 }
 
 // See Server.h
-void ServerImpl::RunConnection() {
-    std::cout << "network debug: " << __PRETTY_FUNCTION__ << std::endl;
-    // TODO: All connection work is here
+void ServerImpl::RunConnection(int client_socket) {
+    const size_t BUFFER_CAPACITY = 2048; // TODO: move to header
+    char buffer[BUFFER_CAPACITY];
+    ssize_t position = 0;
+    size_t parsed = 0;
+    Protocol::Parser parser;
+
+    while (running.load()) {
+        std::string out;
+        try {
+            do {
+                std::memmove(buffer, buffer + parsed, position - parsed);
+                position -= parsed;
+                position = recv(client_socket, buffer + position, BUFFER_CAPACITY - position, 0);
+
+                if (position <= 0) {
+                    CloseConnection(client_socket);
+                    return;
+                }
+            } while (!parser.Parse(buffer, position, parsed));
+
+            uint32_t body_size;
+            auto cmd = parser.Build(body_size);
+            parser.Reset();
+
+            std::string body;
+            if (body_size) {
+                body_size += 2; // '\r\n'
+
+                size_t bytes_read = position - parsed;
+                body.append(buffer + parsed, bytes_read);
+                
+                while (bytes_read < body_size) {
+                    position = recv(client_socket, buffer, BUFFER_CAPACITY, 0);
+                    body.append(buffer, position);
+                    bytes_read += position;
+                }
+            }
+
+            cmd->Execute(*pStorage, body, out);
+        } catch (std::runtime_error &e) {
+            out = std::string("SERVER_ERROR ") + e.what() + std::string("\r\n");
+        }
+
+        if (out.size()) {
+            size_t bytes_sent_total = 0;
+            while (bytes_sent_total < out.size()) {
+                ssize_t bytes_sent = send(client_socket, out.data() + bytes_sent_total, out.size() - bytes_sent_total, 0);
+                if (position <= 0) {
+                    CloseConnection(client_socket);
+                    return;
+                }
+                bytes_sent_total += bytes_sent;
+            }
+        }
+    }
+}
+
+void ServerImpl::CloseConnection(int client_socket) {
+    {
+        std::lock_guard<std::mutex> lock(connections_mutex);
+        connections.erase(pthread_self());
+    }
+    close(client_socket);
+    connections_cv.notify_one();
 }
 
 } // namespace Blocking

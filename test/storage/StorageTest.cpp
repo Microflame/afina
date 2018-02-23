@@ -29,7 +29,7 @@ TEST(StorageTest, PutGet) {
 }
 
 TEST(StorageTest, PutOverwrite) {
-    MapBasedGlobalLockImpl storage;
+    MapBasedGlobalLockImpl storage(2 * (3 + 1));
 
     storage.Put("KEY1", "val1");
     storage.Put("KEY1", "val2");
@@ -42,8 +42,8 @@ TEST(StorageTest, PutOverwrite) {
 TEST(StorageTest, PutIfAbsent) {
     MapBasedGlobalLockImpl storage;
 
-    storage.Put("KEY1", "val1");
-    storage.PutIfAbsent("KEY1", "val2");
+    EXPECT_TRUE(storage.PutIfAbsent("KEY1", "val1"));
+    EXPECT_FALSE(storage.PutIfAbsent("KEY1", "val2"));
 
     std::string value;
     EXPECT_TRUE(storage.Get("KEY1", value));
@@ -51,16 +51,16 @@ TEST(StorageTest, PutIfAbsent) {
 }
 
 TEST(StorageTest, BigTest) {
-    MapBasedGlobalLockImpl storage(100000);
+    MapBasedGlobalLockImpl storage(2 * (3 + 6) * 100000);
 
     std::stringstream ss;
 
     for(long i=0; i<100000; ++i)
     {
-        ss << "Key" << i;
+        ss << "Key" << std::setw(6) << std::setfill('0') << i;
         std::string key = ss.str();
         ss.str("");
-        ss << "Val" << i;
+        ss << "Val" << std::setw(6) << std::setfill('0') << i;
         std::string val = ss.str();
         ss.str("");
         storage.Put(key, val);
@@ -68,10 +68,10 @@ TEST(StorageTest, BigTest) {
     
     for(long i=99999; i>=0; --i)
     {
-        ss << "Key" << i;
+        ss << "Key" << std::setw(6) << std::setfill('0') << i;
         std::string key = ss.str();
         ss.str("");
-        ss << "Val" << i;
+        ss << "Val" << std::setw(6) << std::setfill('0') << i;
         std::string val = ss.str();
         ss.str("");
         
@@ -84,16 +84,16 @@ TEST(StorageTest, BigTest) {
 }
 
 TEST(StorageTest, MaxTest) {
-    MapBasedGlobalLockImpl storage(1000);
+    MapBasedGlobalLockImpl storage(2 * (3 + 5) * 1000);
 
     std::stringstream ss;
 
     for(long i=0; i<1100; ++i)
     {
-        ss << "Key" << i;
+        ss << "Key" << std::setw(5) << std::setfill('0') << i;
         std::string key = ss.str();
         ss.str("");
-        ss << "Val" << i;
+        ss << "Val" << std::setw(5) << std::setfill('0') << i;
         std::string val = ss.str();
         ss.str("");
         storage.Put(key, val);
@@ -101,10 +101,10 @@ TEST(StorageTest, MaxTest) {
     
     for(long i=100; i<1100; ++i)
     {
-        ss << "Key" << i;
+        ss << "Key" << std::setw(5) << std::setfill('0') << i;
         std::string key = ss.str();
         ss.str("");
-        ss << "Val" << i;
+        ss << "Val" << std::setw(5) << std::setfill('0') << i;
         std::string val = ss.str();
         ss.str("");
         
@@ -116,7 +116,7 @@ TEST(StorageTest, MaxTest) {
     
     for(long i=0; i<100; ++i)
     {
-        ss << "Key" << i;
+        ss << "Key" << std::setw(5) << std::setfill('0') << i;
         std::string key = ss.str();
         ss.str("");
         

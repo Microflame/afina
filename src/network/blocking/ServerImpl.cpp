@@ -108,13 +108,18 @@ void ServerImpl::Stop() {
     std::cout << "network debug: " << __PRETTY_FUNCTION__ << std::endl;
     running.store(false);
 
-
+    shutdown(server_socket, SHUT_RDWR);
 }
 
 // See Server.h
 void ServerImpl::Join() {
     std::cout << "network debug: " << __PRETTY_FUNCTION__ << std::endl;
     pthread_join(accept_thread, 0);
+
+    std::unique_lock<std::mutex> lock(connections_mutex);
+    while (!connections.empty()) {
+        connections_cv.wait(lock);
+    }
 }
 
 // See Server.h
@@ -141,7 +146,7 @@ void ServerImpl::RunAcceptor() {
     // - Family: IPv4
     // - Type: Full-duplex stream (reliable)
     // - Protocol: TCP
-    int server_socket = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
+    server_socket = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (server_socket == -1) {
         throw std::runtime_error("Failed to open socket");
     }
@@ -187,15 +192,16 @@ void ServerImpl::RunAcceptor() {
             close(server_socket);
             throw std::runtime_error("Socket accept() failed");
         }
-
-        if (connections.size() < max_workers) { // TODO: lock
-            pthread_t client_thread;
-            pthread_create(&client_thread, NULL, RunConnectionProxy, new std::pair<ServerImpl*, int>(this, client_socket));
-            pthread_detach(client_thread);
-            connections.insert(client_thread);
-        } else {
-            std::cout << "NOT ENOUGH WORKERS: " << connections.size() << std::endl;
-            // TODO
+        {
+            std::lock_guard<std::mutex> lock(connections_mutex);
+            if (connections.size() < max_workers) {
+                pthread_t client_thread;
+                pthread_create(&client_thread, NULL, RunConnectionProxy, new std::pair<ServerImpl*, int>(this, client_socket));
+                pthread_detach(client_thread);
+                connections.insert(client_thread);
+            } else {
+                close(client_socket);
+            }
         }
     }
 
@@ -205,7 +211,6 @@ void ServerImpl::RunAcceptor() {
 
 // See Server.h
 void ServerImpl::RunConnection(int client_socket) {
-    const size_t BUFFER_CAPACITY = 2048; // TODO: move to header
     char buffer[BUFFER_CAPACITY];
     ssize_t position = 0;
     size_t parsed = 0;
@@ -260,6 +265,7 @@ void ServerImpl::RunConnection(int client_socket) {
             }
         }
     }
+    CloseConnection(client_socket);
 }
 
 void ServerImpl::CloseConnection(int client_socket) {

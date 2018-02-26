@@ -41,11 +41,17 @@ protected:
      * Methos is running for each connection
      */
     void RunConnection(int client_socket);
+
     void CloseConnection(int client_socket);
 
 private:
     static void *RunAcceptorProxy(void *p);
+
     static void *RunConnectionProxy(void *p);
+
+    int server_socket;
+    
+    const size_t BUFFER_CAPACITY = 2048;
 
     // Atomic flag to notify threads when it is time to stop. Note that
     // flag must be atomic in order to safely publisj changes cross thread

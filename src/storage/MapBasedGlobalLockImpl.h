@@ -5,6 +5,8 @@
 #include <mutex>
 #include <string>
 
+#include <functional>
+
 #include <afina/Storage.h>
 #include "LinkedList.h"
 
@@ -43,7 +45,10 @@ private:
     void Trim();
 
     size_t _max_size;
-    std::unordered_map<std::string, LinkedList::Entry*> _backend;
+    std::unordered_map<std::reference_wrapper<const std::string>,
+                        LinkedList::Entry*,
+                        std::hash<std::string>,
+                        std::equal_to<std::string>> _backend;
 
     mutable LinkedList _list;
     size_t _size;

@@ -61,7 +61,7 @@ public:
     public:
         Entry(const std::string& key, const std::string& value, Entry* next, Entry* prev) : key(key), value(value), next(next), prev(prev) {}
 
-        const std::string& key;
+        const std::string key;
         std::string value;
 
         size_t size() {

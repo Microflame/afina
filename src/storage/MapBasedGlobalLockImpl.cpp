@@ -28,9 +28,8 @@ bool MapBasedGlobalLockImpl::PutIfAbsent(const std::string &key, const std::stri
 }
 
 bool MapBasedGlobalLockImpl::PutFast(const std::string &key, const std::string &value) {
-	_backend[key] = nullptr;
-	auto e = _list.Put(_backend.find(key)->first, value);
-	_backend[key] = e;
+	auto e = _list.Put(key, value);
+	_backend[e->key] = e;
 	_size += e->size();
 
 	Trim();

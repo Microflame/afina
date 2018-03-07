@@ -213,22 +213,27 @@ void ServerImpl::RunAcceptor() {
 void ServerImpl::RunConnection(int client_socket) {
     char buffer[BUFFER_CAPACITY];
     ssize_t position = 0;
-    size_t parsed = 0;
     Protocol::Parser parser;
 
     while (running.load()) {
+        size_t parsed = 0;
         std::string out;
         try {
             do {
                 std::memmove(buffer, buffer + parsed, position - parsed);
                 position -= parsed;
-                position = recv(client_socket, buffer + position, BUFFER_CAPACITY - position, 0);
+                int bytes_read = recv(client_socket, buffer + position, BUFFER_CAPACITY - position, 0);
+                position += bytes_read;
 
                 if (position <= 0) {
                     CloseConnection(client_socket);
                     return;
                 }
             } while (!parser.Parse(buffer, position, parsed));
+
+            std::memmove(buffer, buffer + parsed, position - parsed);
+            position -= parsed;
+            parsed = 0;
 
             uint32_t body_size;
             auto cmd = parser.Build(body_size);
@@ -238,26 +243,29 @@ void ServerImpl::RunConnection(int client_socket) {
             if (body_size) {
                 body_size += 2; // '\r\n'
 
-                size_t bytes_read = position - parsed;
-                body.append(buffer + parsed, bytes_read);
+                body.append(buffer, position);
+                body_size -= position;
                 
-                while (bytes_read < body_size) {
+                while (body_size > 0) {
                     position = recv(client_socket, buffer, BUFFER_CAPACITY, 0);
                     body.append(buffer, position);
-                    bytes_read += position;
+                    body_size -= position;
                 }
+
+                position = -body_size;
             }
 
             cmd->Execute(*pStorage, body, out);
         } catch (std::runtime_error &e) {
             out = std::string("SERVER_ERROR ") + e.what() + std::string("\r\n");
+            position = 0;
         }
 
         if (out.size()) {
             size_t bytes_sent_total = 0;
             while (bytes_sent_total < out.size()) {
                 ssize_t bytes_sent = send(client_socket, out.data() + bytes_sent_total, out.size() - bytes_sent_total, 0);
-                if (position <= 0) {
+                if (bytes_sent <= 0) {
                     CloseConnection(client_socket);
                     return;
                 }

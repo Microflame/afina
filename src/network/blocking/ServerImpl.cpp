@@ -212,28 +212,28 @@ void ServerImpl::RunAcceptor() {
 // See Server.h
 void ServerImpl::RunConnection(int client_socket) {
     char buffer[BUFFER_CAPACITY];
-    ssize_t position = 0;
     Protocol::Parser parser;
+    bool error = false;
+    ssize_t position = 0;
 
-    while (running.load()) {
-        size_t parsed = 0;
+    while (running.load() && !error) {
         std::string out;
         try {
+            bool parser_done = false;
             do {
-                std::memmove(buffer, buffer + parsed, position - parsed);
-                position -= parsed;
-                int bytes_read = recv(client_socket, buffer + position, BUFFER_CAPACITY - position, 0);
+                ssize_t bytes_read = recv(client_socket, buffer + position, BUFFER_CAPACITY - position, 0);
                 position += bytes_read;
-
-                if (position <= 0) {
+                if (bytes_read < 0 || position == 0) {
                     CloseConnection(client_socket);
                     return;
                 }
-            } while (!parser.Parse(buffer, position, parsed));
 
-            std::memmove(buffer, buffer + parsed, position - parsed);
-            position -= parsed;
-            parsed = 0;
+                size_t parsed;
+                parser_done = parser.Parse(buffer, position, parsed);
+
+                std::memmove(buffer, buffer + parsed, position - parsed);
+                position -= parsed;
+            } while (!parser_done);
 
             uint32_t body_size;
             auto cmd = parser.Build(body_size);
@@ -241,24 +241,27 @@ void ServerImpl::RunConnection(int client_socket) {
 
             std::string body;
             if (body_size) {
-                body_size += 2; // '\r\n'
+                body_size += 2; // trailing '\r\n'
 
-                body.append(buffer, position);
-                body_size -= position;
-                
-                while (body_size > 0) {
-                    position = recv(client_socket, buffer, BUFFER_CAPACITY, 0);
-                    body.append(buffer, position);
+                while (body_size > position) {
                     body_size -= position;
+                    body.append(buffer, position);
+                    position = recv(client_socket, buffer, BUFFER_CAPACITY, 0);
+                    if (position <= 0) {
+                        CloseConnection(client_socket);
+                        return;
+                    }
                 }
 
-                position = -body_size;
+                body.append(buffer, body_size);
+                std::memmove(buffer, buffer + body_size, position - body_size);
+                position -= body_size;
             }
 
             cmd->Execute(*pStorage, body, out);
         } catch (std::runtime_error &e) {
             out = std::string("SERVER_ERROR ") + e.what() + std::string("\r\n");
-            position = 0;
+            error = true;
         }
 
         if (out.size()) {

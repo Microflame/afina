@@ -9,7 +9,15 @@
 #include <string>
 #include <thread>
 
+#include <chrono>
+#include <set>
+
+#include <iostream>
+
 namespace Afina {
+
+class Executor;
+void perform(Executor *executor);
 
 /**
  * # Thread pool
@@ -26,9 +34,25 @@ class Executor {
         // Threadppol is stopped
         kStopped
     };
+public:
+    Executor(std::string name, size_t low_watermark,
+             size_t high_watermark, size_t max_queue_size,
+             std::chrono::milliseconds idle_time)
+             :
+             state(State::kRun), low_watermark(low_watermark),
+             high_watermark(high_watermark), max_queue_size(max_queue_size),
+             idle_threads(0), idle_time(idle_time) {
 
-    Executor(std::string name, int size);
-    ~Executor();
+        std::lock_guard<std::mutex> lock(mutex);
+        for (size_t t = 0; t < low_watermark; ++t) {
+            auto trd = std::thread(perform, this);
+            threads.insert(trd.get_id());
+            trd.detach();
+        }
+    }
+    ~Executor() {
+        Stop(true);
+    }
 
     /**
      * Signal thread pool to stop, it will stop accepting new jobs and close threads just after each become
@@ -36,7 +60,17 @@ class Executor {
      *
      * In case if await flag is true, call won't return until all background jobs are done and all threads are stopped
      */
-    void Stop(bool await = false);
+    void Stop(bool await = false) {
+        std::unique_lock<std::mutex> lock(mutex);
+        state = State::kStopping;
+        empty_condition.notify_all();
+        if (!await) {
+            return;
+        }
+        while (!threads.empty()) {
+            finish_condition.wait(lock);
+        }
+    }
 
     /**
      * Add function to be executed on the threadpool. Method returns true in case if task has been placed
@@ -49,11 +83,21 @@ class Executor {
         // Prepare "task"
         auto exec = std::bind(std::forward<F>(func), std::forward<Types>(args)...);
 
-        std::unique_lock<std::mutex> lock(this->mutex);
+        std::lock_guard<std::mutex> lock(mutex);
         if (state != State::kRun) {
             return false;
         }
 
+        if (idle_threads == 0) {
+            if (threads.size() < high_watermark) {
+                auto trd = std::thread(perform, this);
+                threads.insert(trd.get_id());
+                trd.detach();
+            } else if (tasks.size() == max_queue_size) {
+                return false;
+            }
+        }
+        
         // Enqueue new task
         tasks.push_back(exec);
         empty_condition.notify_one();
@@ -82,10 +126,12 @@ private:
      */
     std::condition_variable empty_condition;
 
+    std::condition_variable finish_condition;
+
     /**
      * Vector of actual threads that perorm execution
      */
-    std::vector<std::thread> threads;
+    std::set<std::thread::id> threads;
 
     /**
      * Task queue
@@ -96,7 +142,47 @@ private:
      * Flag to stop bg threads
      */
     State state;
+
+    size_t low_watermark;
+    size_t high_watermark;
+    size_t idle_threads;
+    size_t max_queue_size;
+    std::chrono::milliseconds idle_time;
 };
+
+void perform(Executor *executor) {
+    auto last_exec_time = std::chrono::system_clock::now();
+    while (1) {
+        std::function<void()> task;
+
+        {
+            std::unique_lock<std::mutex> lock(executor->mutex);
+
+            while (executor->tasks.empty()) {
+                ++executor->idle_threads;
+                executor->empty_condition.wait_for(lock, executor->idle_time);
+                --executor->idle_threads;
+                auto idle_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - last_exec_time);
+                if ((idle_time_ms >= executor->idle_time &&
+                     executor->threads.size() > executor->low_watermark ||
+                     executor->state == Executor::State::kStopping) &&
+                     executor->tasks.empty()
+                    ) {
+                    executor->threads.erase(std::this_thread::get_id());
+                    executor->finish_condition.notify_one();
+                    return;
+                }
+            }
+
+            task = std::move(executor->tasks.front());
+            executor->tasks.pop_front();
+        }
+
+        task();
+
+        last_exec_time = std::chrono::system_clock::now();
+    }
+}
 
 } // namespace Afina
 

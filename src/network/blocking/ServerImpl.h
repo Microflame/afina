@@ -8,6 +8,7 @@
 #include <unordered_set>
 
 #include <afina/network/Server.h>
+#include <afina/Executor.h>
 
 namespace Afina {
 namespace Network {
@@ -42,16 +43,14 @@ protected:
      */
     void RunConnection(int client_socket);
 
-    void CloseConnection(int client_socket);
-
 private:
     static void *RunAcceptorProxy(void *p);
-
-    static void *RunConnectionProxy(void *p);
 
     int server_socket;
     
     const size_t BUFFER_CAPACITY = 2048;
+
+    Executor executor;
 
     // Atomic flag to notify threads when it is time to stop. Note that
     // flag must be atomic in order to safely publisj changes cross thread
@@ -72,15 +71,15 @@ private:
     uint32_t listen_port;
 
     // Mutex used to access connections list
-    std::mutex connections_mutex;
+    // std::mutex connections_mutex;
 
     // Conditional variable used to notify waiters about empty
     // connections list
-    std::condition_variable connections_cv;
+    // std::condition_variable connections_cv;
 
     // Threads that are processing connection data, permits
     // access only from inside of accept_thread
-    std::unordered_set<pthread_t> connections;
+    // std::unordered_set<pthread_t> connections;
 };
 
 } // namespace Blocking

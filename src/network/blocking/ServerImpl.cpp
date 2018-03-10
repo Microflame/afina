@@ -36,21 +36,21 @@ void *ServerImpl::RunAcceptorProxy(void *p) {
     return 0;
 }
 
-void *ServerImpl::RunConnectionProxy(void *p) {
-    auto server_client_pair = reinterpret_cast<std::pair<ServerImpl*, int>*>(p);
-    auto srv = server_client_pair->first;
-    auto client_socket = server_client_pair->second;
-    try {
-        srv->RunConnection(client_socket);
-    } catch (std::runtime_error &ex) {
-        std::cerr << "Server fails: " << ex.what() << std::endl;
-    }
-    delete server_client_pair;
-    return 0;
-}
+// void *ServerImpl::RunConnectionProxy(void *p) {
+//     auto server_client_pair = reinterpret_cast<std::pair<ServerImpl*, int>*>(p);
+//     auto srv = server_client_pair->first;
+//     auto client_socket = server_client_pair->second;
+//     try {
+//         srv->RunConnection(client_socket);
+//     } catch (std::runtime_error &ex) {
+//         std::cerr << "Server fails: " << ex.what() << std::endl;
+//     }
+//     delete server_client_pair;
+//     return 0;
+// }
 
 // See Server.h
-ServerImpl::ServerImpl(std::shared_ptr<Afina::Storage> ps) : Server(ps) {}
+ServerImpl::ServerImpl(std::shared_ptr<Afina::Storage> ps) : Server(ps), executor("exec", 2, 5, 10, std::chrono::milliseconds(500)) {}
 
 // See Server.h
 ServerImpl::~ServerImpl() {}
@@ -109,6 +109,8 @@ void ServerImpl::Stop() {
     running.store(false);
 
     shutdown(server_socket, SHUT_RDWR);
+
+    executor.Stop();
 }
 
 // See Server.h
@@ -116,10 +118,7 @@ void ServerImpl::Join() {
     std::cout << "network debug: " << __PRETTY_FUNCTION__ << std::endl;
     pthread_join(accept_thread, 0);
 
-    std::unique_lock<std::mutex> lock(connections_mutex);
-    while (!connections.empty()) {
-        connections_cv.wait(lock);
-    }
+    executor.Join();
 }
 
 // See Server.h
@@ -192,17 +191,14 @@ void ServerImpl::RunAcceptor() {
             close(server_socket);
             throw std::runtime_error("Socket accept() failed");
         }
-        {
-            std::lock_guard<std::mutex> lock(connections_mutex);
-            if (connections.size() < max_workers) {
-                pthread_t client_thread;
-                pthread_create(&client_thread, NULL, RunConnectionProxy, new std::pair<ServerImpl*, int>(this, client_socket));
-                pthread_detach(client_thread);
-                connections.insert(client_thread);
-            } else {
-                close(client_socket);
+
+        executor.Execute([](ServerImpl* srv, int client_socket){
+            try {
+                srv->RunConnection(client_socket);
+            } catch (std::runtime_error &ex) {
+                std::cerr << "Server fails: " << ex.what() << std::endl;
             }
-        }
+        }, this, client_socket);
     }
 
     // Cleanup on exit...
@@ -224,7 +220,7 @@ void ServerImpl::RunConnection(int client_socket) {
                 ssize_t bytes_read = recv(client_socket, buffer + position, BUFFER_CAPACITY - position, 0);
                 position += bytes_read;
                 if (bytes_read < 0 || position == 0) {
-                    CloseConnection(client_socket);
+                    close(client_socket);
                     return;
                 }
 
@@ -248,7 +244,7 @@ void ServerImpl::RunConnection(int client_socket) {
                     body.append(buffer, position);
                     position = recv(client_socket, buffer, BUFFER_CAPACITY, 0);
                     if (position <= 0) {
-                        CloseConnection(client_socket);
+                        close(client_socket);
                         return;
                     }
                 }
@@ -269,23 +265,14 @@ void ServerImpl::RunConnection(int client_socket) {
             while (bytes_sent_total < out.size()) {
                 ssize_t bytes_sent = send(client_socket, out.data() + bytes_sent_total, out.size() - bytes_sent_total, 0);
                 if (bytes_sent <= 0) {
-                    CloseConnection(client_socket);
+                    close(client_socket);
                     return;
                 }
                 bytes_sent_total += bytes_sent;
             }
         }
     }
-    CloseConnection(client_socket);
-}
-
-void ServerImpl::CloseConnection(int client_socket) {
-    {
-        std::lock_guard<std::mutex> lock(connections_mutex);
-        connections.erase(pthread_self());
-    }
     close(client_socket);
-    connections_cv.notify_one();
 }
 
 } // namespace Blocking

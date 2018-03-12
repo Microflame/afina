@@ -16,9 +16,6 @@
 
 namespace Afina {
 
-// class Executor;
-// void perform(Executor *executor);
-
 /**
  * # Thread pool
  */
@@ -45,7 +42,7 @@ public:
 
         std::lock_guard<std::mutex> lock(mutex);
         for (size_t t = 0; t < low_watermark; ++t) {
-            auto trd = std::thread(perform, this);
+            auto trd = std::thread(perform, std::ref(*this));
             threads.insert(trd.get_id());
             trd.detach();
         }
@@ -96,7 +93,7 @@ public:
 
         if (idle_threads == 0) {
             if (threads.size() < high_watermark) {
-                auto trd = std::thread(perform, this);
+                auto trd = std::thread(perform, std::ref(*this));
                 threads.insert(trd.get_id());
                 trd.detach();
             } else if (tasks.size() == max_queue_size) {
@@ -120,33 +117,32 @@ private:
     /**
      * Main function that all pool threads are running. It polls internal task queue and execute tasks
      */
-    // friend void perform(Executor *executor);
-    static void perform(Executor *executor) {
+    static void perform(Executor& executor) {
         auto last_exec_time = std::chrono::system_clock::now();
         while (1) {
             std::function<void()> task;
     
             {
-                std::unique_lock<std::mutex> lock(executor->mutex);
+                std::unique_lock<std::mutex> lock(executor.mutex);
     
-                while (executor->tasks.empty()) {
-                    ++executor->idle_threads;
-                    executor->empty_condition.wait_for(lock, executor->idle_time);
-                    --executor->idle_threads;
+                while (executor.tasks.empty()) {
+                    ++executor.idle_threads;
+                    executor.empty_condition.wait_for(lock, executor.idle_time);
+                    --executor.idle_threads;
                     auto idle_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - last_exec_time);
-                    if ((idle_time_ms >= executor->idle_time &&
-                         executor->threads.size() > executor->low_watermark ||
-                         executor->state == Executor::State::kStopping) &&
-                         executor->tasks.empty()
+                    if ((idle_time_ms >= executor.idle_time &&
+                         executor.threads.size() > executor.low_watermark ||
+                         executor.state == Executor::State::kStopping) &&
+                         executor.tasks.empty()
                         ) {
-                        executor->threads.erase(std::this_thread::get_id());
-                        executor->finish_condition.notify_one();
+                        executor.threads.erase(std::this_thread::get_id());
+                        executor.finish_condition.notify_one();
                         return;
                     }
                 }
     
-                task = std::move(executor->tasks.front());
-                executor->tasks.pop_front();
+                task = std::move(executor.tasks.front());
+                executor.tasks.pop_front();
             }
     
             task();

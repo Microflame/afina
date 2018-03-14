@@ -252,6 +252,8 @@ void ServerImpl::RunConnection(int client_socket) {
                 body.append(buffer, body_size);
                 std::memmove(buffer, buffer + body_size, position - body_size);
                 position -= body_size;
+
+                body = body.substr(0, body_size - 2);
             }
 
             cmd->Execute(*pStorage, body, out);

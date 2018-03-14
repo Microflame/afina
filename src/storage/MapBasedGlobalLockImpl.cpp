@@ -7,6 +7,9 @@ namespace Backend {
 
 // See MapBasedGlobalLockImpl.h
 bool MapBasedGlobalLockImpl::Put(const std::string &key, const std::string &value) {
+	if ((key.size() + value.size()) > _max_size) {
+		return false;
+	}
 	std::lock_guard<std::mutex> lock(_general_mutex);
 	auto it = _backend.find(key);
 	if (it != _backend.end()) {
@@ -18,6 +21,9 @@ bool MapBasedGlobalLockImpl::Put(const std::string &key, const std::string &valu
 
 // See MapBasedGlobalLockImpl.h
 bool MapBasedGlobalLockImpl::PutIfAbsent(const std::string &key, const std::string &value) {
+	if ((key.size() + value.size()) > _max_size) {
+		return false;
+	}
 	std::lock_guard<std::mutex> lock(_general_mutex);
 	auto it = _backend.find(key);
 	if (it != _backend.end()) {
@@ -39,6 +45,9 @@ bool MapBasedGlobalLockImpl::PutFast(const std::string &key, const std::string &
 
 // See MapBasedGlobalLockImpl.h
 bool MapBasedGlobalLockImpl::Set(const std::string &key, const std::string &value) {
+	if ((key.size() + value.size()) > _max_size) {
+		return false;
+	}
 	std::lock_guard<std::mutex> lock(_general_mutex);
 	auto it = _backend.find(key);
 	if (it == _backend.end()) {

@@ -215,21 +215,20 @@ void ServerImpl::RunConnection(int client_socket) {
     while (running.load() && !error) {
         std::string out;
         try {
-            bool parser_done = false;
-            do {
+            size_t parsed;
+            while (!parser.Parse(buffer, position, parsed)) {
+                std::memmove(buffer, buffer + parsed, position - parsed);
+                position -= parsed;
+
                 ssize_t bytes_read = recv(client_socket, buffer + position, BUFFER_CAPACITY - position, 0);
                 position += bytes_read;
                 if (bytes_read < 0 || position == 0) {
                     close(client_socket);
                     return;
                 }
-
-                size_t parsed;
-                parser_done = parser.Parse(buffer, position, parsed);
-
-                std::memmove(buffer, buffer + parsed, position - parsed);
-                position -= parsed;
-            } while (!parser_done);
+            }
+            std::memmove(buffer, buffer + parsed, position - parsed);
+            position -= parsed;
 
             uint32_t body_size;
             auto cmd = parser.Build(body_size);
@@ -253,7 +252,7 @@ void ServerImpl::RunConnection(int client_socket) {
                 std::memmove(buffer, buffer + body_size, position - body_size);
                 position -= body_size;
 
-                body = body.substr(0, body_size - 2);
+                body = body.substr(0, body.length() - 2);
             }
 
             cmd->Execute(*pStorage, body, out);

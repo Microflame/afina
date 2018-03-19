@@ -4,6 +4,8 @@
 #include <memory>
 #include <pthread.h>
 
+#include <atomic>
+
 namespace Afina {
 
 // Forward declaration, see afina/Storage.h
@@ -47,10 +49,15 @@ protected:
     /**
      * Method executing by background thread
      */
-    void OnRun(void *args);
+    static void* OnRun(void *args);
 
 private:
     pthread_t thread;
+    std::shared_ptr<Afina::Storage> pStorage;
+    std::atomic<int> server_socket;
+    std::atomic<bool> running;
+
+    static const int EPOLL_MAX_EVENTS = 8;
 };
 
 } // namespace NonBlocking

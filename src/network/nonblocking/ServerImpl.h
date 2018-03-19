@@ -3,6 +3,8 @@
 
 #include <vector>
 
+#include <memory>
+
 #include <afina/network/Server.h>
 
 namespace Afina {
@@ -37,7 +39,7 @@ private:
     uint32_t listen_port;
 
     // Thread that is accepting new connections
-    std::vector<Worker> workers;
+    std::vector<std::unique_ptr<Worker>> workers;
 };
 
 } // namespace NonBlocking

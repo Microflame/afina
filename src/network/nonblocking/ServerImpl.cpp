@@ -56,7 +56,7 @@ void ServerImpl::Start(uint32_t port, uint16_t n_workers) {
     }
 
     int opts = 1;
-    if (setsockopt(server_socket, SOL_SOCKET, 0, &opts, sizeof(opts)) == -1) {
+    if (setsockopt(server_socket, SOL_SOCKET, SO_REUSEADDR, &opts, sizeof(opts)) == -1) {
         close(server_socket);
         throw std::runtime_error("Socket setsockopt() failed");
     }
@@ -73,8 +73,8 @@ void ServerImpl::Start(uint32_t port, uint16_t n_workers) {
     }
 
     for (int i = 0; i < n_workers; i++) {
-        workers.emplace_back(pStorage);
-        workers.back().Start(server_socket);
+        workers.emplace_back(new Worker(pStorage));
+        workers.back()->Start(server_socket);
     }
 }
 
@@ -82,7 +82,7 @@ void ServerImpl::Start(uint32_t port, uint16_t n_workers) {
 void ServerImpl::Stop() {
     std::cout << "network debug: " << __PRETTY_FUNCTION__ << std::endl;
     for (auto &worker : workers) {
-        worker.Stop();
+        worker->Stop();
     }
 }
 
@@ -90,7 +90,7 @@ void ServerImpl::Stop() {
 void ServerImpl::Join() {
     std::cout << "network debug: " << __PRETTY_FUNCTION__ << std::endl;
     for (auto &worker : workers) {
-        worker.Join();
+        worker->Join();
     }
 }
 

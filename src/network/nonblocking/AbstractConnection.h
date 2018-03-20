@@ -92,6 +92,7 @@ public:
             parsing = true;
     
             if (out.size()) {
+                out.append("\r\n");
                 size_t bytes_sent_total = 0;
                 while (bytes_sent_total < out.size()) {
                     ssize_t bytes_sent = send_body(fd, out.data() + bytes_sent_total, out.size() - bytes_sent_total, 0);

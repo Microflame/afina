@@ -49,6 +49,8 @@ int main(int argc, char **argv) {
         // and simplify validation below
         options.add_options()("s,storage", "Type of storage service to use", cxxopts::value<std::string>());
         options.add_options()("n,network", "Type of network service to use", cxxopts::value<std::string>());
+        options.add_options()("r,readfifo", "Fifo read channel", cxxopts::value<std::string>());
+        options.add_options()("w,writefifo", "Fifo read channel", cxxopts::value<std::string>());
         options.add_options()("h,help", "Print usage info");
         options.parse(argc, argv);
 
@@ -92,6 +94,18 @@ int main(int argc, char **argv) {
     } else {
         throw std::runtime_error("Unknown network type");
     }
+
+    // Fifo
+    std::string fifo_read = "";
+    if (options.count("readfifo") > 0) {
+        fifo_read = options["readfifo"].as<std::string>();
+    }
+    std::string fifo_write = "";
+    if (options.count("writefifo") > 0) {
+        fifo_read = options["writefifo"].as<std::string>();
+        throw std::runtime_error("Fifo write not implemented.");
+    }
+    app.server->SetFifo(fifo_read, fifo_write);
 
     // Init local loop. It will react to signals and performs some metrics collections. Each
     // subsystem is able to push metrics actively, but some metrics could be collected only

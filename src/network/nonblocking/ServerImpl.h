@@ -32,6 +32,7 @@ public:
     // See Server.h
     void Join() override;
 
+    void SetFifo(std::string read, std::string write) override;
 private:
     // Port to listen for new connections, permits access only from
     // inside of accept_thread
@@ -40,6 +41,9 @@ private:
 
     // Thread that is accepting new connections
     std::vector<std::unique_ptr<Worker>> workers;
+
+    std::string fifo_read;
+    std::string fifo_write;
 };
 
 } // namespace NonBlocking

@@ -7,7 +7,7 @@
 #include <unordered_map>
 #include <atomic>
 
-#include "Connection.h"
+#include "AbstractConnection.h"
 
 namespace Afina {
 
@@ -48,6 +48,7 @@ public:
      */
     void Join();
 
+    void SetFifo(std::string read, std::string write);
 protected:
     /**
      * Method executing by background thread
@@ -59,7 +60,9 @@ private:
     std::shared_ptr<Afina::Storage> pStorage;
     std::atomic<int> server_socket;
     std::atomic<bool> running;
-    std::unordered_map<int, std::unique_ptr<Connection>> connections;
+    std::unordered_map<int, std::unique_ptr<AbstractConnection>> connections;
+    std::string fifo_read;
+    std::string fifo_write;
 
     static const int EPOLL_MAX_EVENTS = 8;
 };

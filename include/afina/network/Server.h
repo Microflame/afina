@@ -40,6 +40,8 @@ public:
      */
     virtual void Join() = 0;
 
+    virtual void SetFifo(std::string read, std::string write) {}
+
 protected:
     /**
      * Instance of backing storeage on which current server should execute

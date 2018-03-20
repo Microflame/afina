@@ -74,6 +74,9 @@ void ServerImpl::Start(uint32_t port, uint16_t n_workers) {
 
     for (int i = 0; i < n_workers; i++) {
         workers.emplace_back(new Worker(pStorage));
+        if (i == 0) {
+            workers.back()->SetFifo(fifo_read, fifo_write);  
+        }
         workers.back()->Start(server_socket);
     }
 }
@@ -92,6 +95,12 @@ void ServerImpl::Join() {
     for (auto &worker : workers) {
         worker->Join();
     }
+}
+
+void ServerImpl::SetFifo(std::string read, std::string write) {
+    std::cout << "network debug: " << __PRETTY_FUNCTION__ << std::endl;
+    fifo_read = read;
+    fifo_write = write;
 }
 
 } // namespace NonBlocking

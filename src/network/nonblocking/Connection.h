@@ -7,11 +7,13 @@
 #include <stdexcept>
 
 #include <sys/socket.h>
+#include <unistd.h>
 
 #include <errno.h>
 
 #include <protocol/Parser.h>
 #include <afina/execute/Command.h>
+#include <iostream>
 
 namespace Afina {
 
@@ -30,7 +32,9 @@ class Connection {
 public:
     Connection(int client_socket, std::shared_ptr<Afina::Storage> ps, std::atomic<bool>& running) :
         client_socket(client_socket), pStorage(ps), running(running) {}
-    ~Connection() {}
+    ~Connection() {
+        close_connection();
+    }
 
     int read() {
         Protocol::Parser parser;
@@ -47,7 +51,7 @@ public:
     
                     ssize_t bytes_read = recv(client_socket, buffer + position, BUFFER_CAPACITY - position, 0);
                     if (bytes_read <= 0) {
-                        if ((errno == EWOULDBLOCK || errno == EAGAIN) && bytes_read < 0) {
+                        if ((errno == EWOULDBLOCK || errno == EAGAIN) && bytes_read < 0 && running.load()) {
                             return 0;
                         }
                         return -1;
@@ -105,11 +109,11 @@ public:
         close(client_socket);
     }
 
+    const int client_socket;
 private:
     std::shared_ptr<Afina::Storage> pStorage;
     std::atomic<bool>& running;
     static const size_t BUFFER_CAPACITY = 2048;
-    const int client_socket;
     char buffer[BUFFER_CAPACITY];
 };
 

@@ -4,7 +4,10 @@
 #include <memory>
 #include <pthread.h>
 
+#include <unordered_map>
 #include <atomic>
+
+#include "Connection.h"
 
 namespace Afina {
 
@@ -56,6 +59,7 @@ private:
     std::shared_ptr<Afina::Storage> pStorage;
     std::atomic<int> server_socket;
     std::atomic<bool> running;
+    std::unordered_map<int, std::unique_ptr<Connection>> connections;
 
     static const int EPOLL_MAX_EVENTS = 8;
 };

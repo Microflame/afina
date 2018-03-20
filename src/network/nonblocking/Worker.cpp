@@ -10,7 +10,6 @@
 #include <errno.h>
 
 #include "Utils.h"
-#include "Connection.h"
 
 
 namespace Afina {
@@ -79,52 +78,48 @@ void* Worker::OnRun(void *args) {
 
         for (int i = 0; i < n_fds_ready; ++i) {
             int client_socket = 0;
-            if (events_buffer[i].data.ptr == NULL) { // put in loop
-                if (((client_socket = accept(server_socket, NULL, NULL)) == -1) && ((errno != EWOULDBLOCK) || (errno != EAGAIN))) {
-                    close(server_socket);
-                    if (worker.running.load()) {
-                        throw std::runtime_error("Worker failed to accept");
+            if (events_buffer[i].data.ptr == NULL) { // todo: put in loop
+                if ((client_socket = accept(server_socket, NULL, NULL)) == -1) {
+                    if ((errno != EWOULDBLOCK) && (errno != EAGAIN)) {
+                        close(server_socket);
+                        if (worker.running.load()) {
+                            throw std::runtime_error("Worker failed to accept");
+                        }
                     }
-                    return NULL;
-                }
-                make_socket_non_blocking(client_socket);
-                event.events = EPOLLIN | EPOLLHUP | EPOLLERR;
-                auto connection = new Connection(client_socket, worker.pStorage, worker.running); // todo: fix memory leak;
-                event.data.ptr = connection;
-                if (epoll_ctl(epfd, EPOLL_CTL_ADD, client_socket, &event) == -1) {
-                    throw std::runtime_error("Worker failed to assign client socket to epoll");
+                } else {
+                    make_socket_non_blocking(client_socket);
+                    event.events = EPOLLIN | EPOLLHUP | EPOLLERR;
+                    auto connection = new Connection(client_socket, worker.pStorage, worker.running);
+                    event.data.ptr = connection;
+                    worker.connections.emplace(client_socket, connection);
+                    if (epoll_ctl(epfd, EPOLL_CTL_ADD, client_socket, &event) == -1) {
+                        throw std::runtime_error("Worker failed to assign client socket to epoll");
+                    }
                 }
             } else {
                 Connection& connection = *static_cast<Connection*>(events_buffer[i].data.ptr);
+                client_socket = connection.client_socket;
                 if (events_buffer[i].events & (EPOLLERR | EPOLLHUP)) {
                     epoll_ctl(epfd, EPOLL_CTL_DEL, client_socket, NULL);
-                    connection.close_connection();
-                    delete &connection;
+                    worker.connections.erase(client_socket);
                 } else if (events_buffer[i].events & EPOLLIN) {
                     if (connection.read() == -1) {
                         epoll_ctl(epfd, EPOLL_CTL_DEL, client_socket, NULL);
-                        connection.close_connection();
-                        delete &connection;
+                        worker.connections.erase(client_socket);
                     } 
                 } else {
-                    connection.close_connection();
+                    epoll_ctl(epfd, EPOLL_CTL_DEL, client_socket, NULL);
+                    worker.connections.erase(client_socket);
                     throw std::runtime_error("unknown event");
                 }
             }
         }
     }
 
-
-    // TODO: implementation here
-    // 1. Create epoll_context here
-    // 2. Add server_socket to context
-    // 3. Accept new connections, don't forget to call make_socket_nonblocking on
-    //    the client socket descriptor
-    // 4. Add connections to the local context
-    // 5. Process connection events
-    //
-    // Do not forget to use EPOLLEXCLUSIVE flag when register socket
-    // for events to avoid thundering herd type behavior.
+    for (const auto &p : worker.connections) {
+        epoll_ctl(epfd, EPOLL_CTL_DEL, p.first, NULL);
+    }
+    worker.connections.clear();
 }
 
 } // namespace NonBlocking

@@ -113,7 +113,12 @@ void* Worker::OnRun(void *args) {
                     }
                 } else {
                     make_socket_non_blocking(fd);
-                    event.events = EPOLLIN | EPOLLHUP | EPOLLERR;
+                    event.events = EPOLLIN | EPOLLOUT | EPOLLHUP | EPOLLERR;
+                    /* // DEBUG
+                    int snd_buf_sz = 2500;
+                    socklen_t sz = sizeof(snd_buf_sz);
+                    setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &snd_buf_sz, sz);
+                    */
                     auto connection = new SocketConnection(fd, worker.pStorage, worker.running);
                     event.data.ptr = connection;
                     worker.connections.emplace(fd, connection);
@@ -125,34 +130,10 @@ void* Worker::OnRun(void *args) {
                 AbstractConnection& connection = *static_cast<AbstractConnection*>(events_buffer[i].data.ptr);
                 fd = connection.fd;
 
-                // char buffer[128];
-                // int rd = read(fd, buffer, 128);
-                // if (rd > 0) {
-                //     std::cout << std::string(buffer, rd) << std::endl;
-                // } else {
-                //     std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-                //     std::cout << "sleeping" << std::endl;
-                //     int rd = read(fd, buffer, 128);
-                //     if (rd > 0) {
-                //         std::cout << "sleepy: " << std::string(buffer, rd) << std::endl;
-                //     }
-                // }
-                // rd = read(fd, buffer, 128);
-                // if (rd > 0) {
-                //     std::cout << std::string(buffer, rd) << std::endl;
-                // } else {
-                //     std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                //     std::cout << "sleeping" << std::endl;
-                //     int rd = read(fd, buffer, 128);
-                //     if (rd > 0) {
-                //         std::cout << "sleepy: " << std::string(buffer, rd) << std::endl;
-                //     }
-                // }
                 if (events_buffer[i].events & (EPOLLERR | EPOLLHUP)) {
-                    std::cout << "EPOLLERR | EPOLLHUP" << std::endl;
                     epoll_ctl(epfd, EPOLL_CTL_DEL, fd, NULL);
                     worker.connections.erase(fd);
-                } else if (events_buffer[i].events & EPOLLIN) {
+                } else if (events_buffer[i].events & (EPOLLIN | EPOLLOUT)) {
                     if (connection.Read() == -1) {
                         epoll_ctl(epfd, EPOLL_CTL_DEL, fd, NULL);
                         worker.connections.erase(fd);

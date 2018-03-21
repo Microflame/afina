@@ -39,15 +39,23 @@ public:
     int read_body(int fd, char *buf, size_t len, int flags) override {
         ssize_t bytes_read = recv(fd, buf, len, flags);
         if (bytes_read <= 0) {
-            ret_val = -1;
+            if ((errno == EWOULDBLOCK || errno == EAGAIN) && bytes_read < 0 && running.load()) {
+                ret_val = 0;
+            } else {
+                ret_val = -1;
+            }
         }
         return bytes_read;
     }
 
     int send_body(int fd, const char *buf, size_t len, int flags) override {
         ssize_t bytes_sent = send(fd, buf, len, flags);
-        if (bytes_sent <= 0) {
-            ret_val = -1;
+        if (bytes_sent < 0) {
+            if ((errno == EWOULDBLOCK || errno == EAGAIN) && running.load()) {
+                ret_val = 0;
+            } else {
+                ret_val = -1;
+            }
         }
         return bytes_sent;
     }

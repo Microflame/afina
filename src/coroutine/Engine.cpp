@@ -28,7 +28,6 @@ void Engine::Restore(context &ctx) {
 	char stack_pos;
 	if (&stack_pos >= ctx.Low) {
 		Restore(ctx); // so why not use array?
-		return;
 	}
 
 	memcpy(ctx.Low, std::get<0>(ctx.Stack), std::get<1>(ctx.Stack));
@@ -37,7 +36,7 @@ void Engine::Restore(context &ctx) {
 
 void Engine::yield() {
 	context *todo = alive;
-	while (todo != nullptr && todo == cur_routine) {
+	if (todo == cur_routine && todo != nullptr) {
 		todo = todo->next;
 	}
 

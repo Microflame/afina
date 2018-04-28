@@ -4,6 +4,7 @@
 #include <vector>
 
 #include <storage/MapBasedGlobalLockImpl.h>
+#include <storage/MapBasedFlatCombineImpl.h>
 #include <afina/execute/Get.h>
 #include <afina/execute/Set.h>
 #include <afina/execute/Add.h>
@@ -15,10 +16,10 @@ using namespace Afina::Execute;
 using namespace std;
 
 TEST(StorageTest, PutGet) {
-    MapBasedGlobalLockImpl storage;
+    MapBasedFlatCombineImpl storage;
 
-    storage.Put("KEY1", "val1");
-    storage.Put("KEY2", "val2");
+    EXPECT_TRUE(storage.Put("KEY1", "val1"));
+    EXPECT_TRUE(storage.Put("KEY2", "val2"));
 
     std::string value;
     EXPECT_TRUE(storage.Get("KEY1", value));
@@ -29,7 +30,7 @@ TEST(StorageTest, PutGet) {
 }
 
 TEST(StorageTest, PutOverwrite) {
-    MapBasedGlobalLockImpl storage(2 * (3 + 1));
+    MapBasedFlatCombineImpl storage(2 * (3 + 1));
 
     storage.Put("KEY1", "val1");
     storage.Put("KEY1", "val2");
@@ -40,7 +41,7 @@ TEST(StorageTest, PutOverwrite) {
 }
 
 TEST(StorageTest, PutIfAbsent) {
-    MapBasedGlobalLockImpl storage;
+    MapBasedFlatCombineImpl storage;
 
     EXPECT_TRUE(storage.PutIfAbsent("KEY1", "val1"));
     EXPECT_FALSE(storage.PutIfAbsent("KEY1", "val2"));
@@ -50,8 +51,20 @@ TEST(StorageTest, PutIfAbsent) {
     EXPECT_TRUE(value == "val1");
 }
 
+TEST(StorageTest, Delete) {
+    MapBasedFlatCombineImpl storage;
+
+    storage.PutIfAbsent("KEY1", "val1");
+    storage.Delete("KEY1");
+    storage.PutIfAbsent("KEY1", "val2");
+
+    std::string value;
+    EXPECT_TRUE(storage.Get("KEY1", value));
+    EXPECT_TRUE(value == "val2");
+}
+
 TEST(StorageTest, BigTest) {
-    MapBasedGlobalLockImpl storage(2 * (3 + 6) * 100000);
+    MapBasedFlatCombineImpl storage(2 * (3 + 6) * 100000);
 
     std::stringstream ss;
 
@@ -84,7 +97,7 @@ TEST(StorageTest, BigTest) {
 }
 
 TEST(StorageTest, MaxTest) {
-    MapBasedGlobalLockImpl storage(2 * (3 + 5) * 1000);
+    MapBasedFlatCombineImpl storage(2 * (3 + 5) * 1000);
 
     std::stringstream ss;
 

@@ -15,6 +15,7 @@ namespace Afina {
 namespace Backend {
 
 class MapBasedFlatCombineImpl;
+struct CombineKeyData;
 
 struct Node {
     enum OpCode {
@@ -36,7 +37,17 @@ struct Node {
  */
 class MapBasedFlatCombineImpl : public Afina::Storage {
 public:
-    MapBasedFlatCombineImpl(size_t max_size = 1048576) : _max_size(max_size), _size(0), flat_combiner(combine) {}
+    using Map = std::unordered_map<std::reference_wrapper<const std::string>,
+                        LinkedList::Entry*,
+                        std::hash<std::string>,
+                        std::equal_to<std::string>>;
+    MapBasedFlatCombineImpl(size_t max_size = 1048576) : _max_size(max_size), _size(0), flat_combiner(combine) {
+            priority[Node::OpCode::Delete] = 0;
+            priority[Node::OpCode::Put] = 1;
+            priority[Node::OpCode::PutIfAbsent] = 2;
+            priority[Node::OpCode::Set] = 3;
+            priority[Node::OpCode::Get] = 4;
+    }
     ~MapBasedFlatCombineImpl() {}
 
     // Implements Afina::Storage interface
@@ -56,26 +67,39 @@ public:
 
 private:
     static void combine(FlatCombiner<Node>::Slot **start, FlatCombiner<Node>::Slot **end);
+    static int priority[5];
 
-    bool _Put(const std::string &key, const std::string &value);
-    bool _PutIfAbsent(const std::string &key, const std::string &value);
-    bool _Get(const std::string &key, std::string &value) const;
-    bool _Set(const std::string &key, const std::string &value);
+    bool _Put(CombineKeyData &data);
+    bool _PutIfAbsent(CombineKeyData &data);
+    bool _Set(CombineKeyData &data);
+    bool _Delete(CombineKeyData &data);
+    bool _Get(CombineKeyData &data) const;
+
+    bool _PutFast(CombineKeyData &data);
     bool _Set(LinkedList::Entry* e, const std::string& value);
-    bool _Delete(const std::string &key);
-    bool PutFast(const std::string &key, const std::string &value);
-    bool DeleteUnsafe(const std::string &key);
-    void Trim();
+    bool _DeleteUnsafe(Map::iterator it);
+    void _Trim();
 
     size_t _max_size;
-    std::unordered_map<std::reference_wrapper<const std::string>,
-                        LinkedList::Entry*,
-                        std::hash<std::string>,
-                        std::equal_to<std::string>> _backend;
+    Map _backend;
 
     mutable LinkedList _list;
     size_t _size;
     mutable FlatCombiner<Node> flat_combiner;
+};
+
+struct CombineKeyData {
+    MapBasedFlatCombineImpl::Map::iterator it;
+    MapBasedFlatCombineImpl::Map::iterator hint;
+    bool delete_called;
+    bool put_called;
+    bool put_if_absent_called;
+    bool set_called;
+    bool existed_initially;
+    const std::string *key;
+    std::string *value;
+    std::string initial_value;
+
 };
 
 } // namespace Backend
